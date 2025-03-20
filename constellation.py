@@ -2,9 +2,147 @@ import numpy as np
 from collections import deque
 from satellite import Satellite
 import json
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import random
+from collections import deque
+
+class DQN(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(DQN, self).__init__()
+        self.fc1 = nn.Linear(input_dim, 64)
+        self.fc2 = nn.Linear(64, 64)
+        self.fc3 = nn.Linear(64, output_dim)
+
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        return self.fc3(x)
+
+
 class Constellation:
     MAX_ITERATIONS = 500
     iteration_count = 0
+
+
+  # 新增DQN相关属性
+    REPLAY_MEMORY_SIZE = 10000
+    BATCH_SIZE = 32
+    GAMMA = 0.95
+    EPSILON = 0.1
+    EPSILON_DECAY = 0.995
+    EPSILON_MIN = 0.01
+
+
+    def __init__(self):
+        self.replay_memory = deque(maxlen=self.REPLAY_MEMORY_SIZE)
+        self.dqn_model = None
+        self.target_dqn_model = None
+        self.optimizer = None
+        
+        
+        
+    def train_dqn(self, satellites, start_index, end_index):
+        self.precompute_matrices(satellites)
+        start_satellite = self.satellites[start_index]
+        end_satellite = self.satellites[end_index]
+
+        # 初始化DQN模型
+        input_dim = len(start_satellite.get_state(end_satellite.index))
+        output_dim = len(start_satellite.get_possible_actions())
+        self.dqn_model = DQN(input_dim, output_dim)
+        self.target_dqn_model = DQN(input_dim, output_dim)
+        self.target_dqn_model.load_state_dict(self.dqn_model.state_dict())
+        self.optimizer = optim.Adam(self.dqn_model.parameters(), lr=0.001)
+
+        print("Starting DQN Training:")
+        for i in range(self.MAX_ITERATIONS):
+            print(f"\t{i+1}/{self.MAX_ITERATIONS}")
+            self.iteration_count = i + 1
+            optimal_path = self.train_dqn_iteration(start_satellite, end_satellite)
+
+        print("Training complete, optimal path:", [sat.index for sat in optimal_path])
+        return optimal_path
+
+    def train_dqn_iteration(self, start_satellite, end_satellite):
+        current_satellite = start_satellite
+        path = [current_satellite]
+        max_steps = 10000
+        step = 0
+        while current_satellite != end_satellite:
+            if step > max_steps:
+                print(f"Max steps exceeded in iteration.")
+                break
+
+            state_current = current_satellite.get_state(end_satellite.index)
+            possible_actions = current_satellite.get_possible_actions()
+            if not possible_actions:
+                # No possible actions; terminate the episode
+                break
+
+            if random.random() < self.EPSILON:
+                action_index = random.randint(0, len(possible_actions) - 1)
+            else:
+                state_tensor = torch.FloatTensor(state_current).unsqueeze(0)
+                q_values = self.dqn_model(state_tensor)
+                action_index = torch.argmax(q_values).item()
+
+            action_current = possible_actions[action_index]
+            next_satellite = action_current
+
+            is_final = next_satellite == end_satellite
+            state_next = next_satellite.get_state(end_satellite.index)
+            reward = current_satellite.get_reward_qlearning(state_next, is_final)
+
+            # 存储经验到回放缓冲区
+            self.replay_memory.append((state_current, action_index, reward, state_next, is_final))
+
+            # 训练DQN模型
+            if len(self.replay_memory) >= self.BATCH_SIZE:
+                self.train_dqn_from_memory()
+
+            # 更新目标网络
+            if step % 10 == 0:
+                self.target_dqn_model.load_state_dict(self.dqn_model.state_dict())
+
+            # Move to the next satellite
+            current_satellite = next_satellite
+            path.append(current_satellite)
+
+            step += 1
+
+            if is_final:
+                break
+
+        # 衰减探索率
+        if self.EPSILON > self.EPSILON_MIN:
+            self.EPSILON *= self.EPSILON_DECAY
+
+        return path
+
+    def train_dqn_from_memory(self):
+        minibatch = random.sample(self.replay_memory, self.BATCH_SIZE)
+        states, actions, rewards, next_states, dones = zip(*minibatch)
+
+        states = torch.FloatTensor(states)
+        actions = torch.LongTensor(actions)
+        rewards = torch.FloatTensor(rewards)
+        next_states = torch.FloatTensor(next_states)
+        dones = torch.FloatTensor(dones)
+
+        q_values = self.dqn_model(states)
+        next_q_values = self.target_dqn_model(next_states)
+        max_next_q_values = torch.max(next_q_values, dim=1)[0]
+
+        target_q_values = q_values.clone()
+        for i in range(self.BATCH_SIZE):
+            target_q_values[i][actions[i]] = rewards[i] + (1 - dones[i]) * self.GAMMA * max_next_q_values[i]
+
+        loss = nn.MSELoss()(q_values, target_q_values)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
 
     def precompute_matrices(self, satellites):
         self.satellites = satellites
@@ -47,7 +185,7 @@ class Constellation:
 
                     Satellite.latency_matrix[a][b] = latency
 
-    def train_iteration(self, start_satellite, end_satellite):
+    def train_qlearning_iteration(self, start_satellite, end_satellite):
         current_satellite = start_satellite
         path = [current_satellite]
         max_steps = 10000
@@ -94,7 +232,7 @@ class Constellation:
                 break
         return path
 
-    def train(self, satellites, start_index, end_index):
+    def train_qlearning(self, satellites, start_index, end_index):
         self.precompute_matrices(satellites)
         start_satellite = self.satellites[start_index]
         end_satellite = self.satellites[end_index]
@@ -108,14 +246,14 @@ class Constellation:
             #     sat.num_connections = 0
             
             # Train for one episode
-            optimal_path = self.train_iteration(start_satellite, end_satellite)
+            optimal_path = self.train_qlearning_iteration(start_satellite, end_satellite)
 
         print("Training complete, optimal path:", [sat.index for sat in optimal_path])
         return optimal_path
 
     def train_wrapper(self, satellites, start_index, end_index, results):
         try:
-            optimal_path = self.train(satellites, start_index, end_index)
+            optimal_path = self.train_qlearning(satellites, start_index, end_index)
             results.put(optimal_path)
         except Exception as e:
             if e.errno == errno.EPIPE: 
@@ -152,7 +290,7 @@ class Constellation:
     def compare_routing_methods(self, satellites, start_index=None, end_index=None, mas_optimized_path=[], non_optimized_path=[]):
         # MAS-optimized Path using Q-Learning
         if(non_optimized_path == []): # If a path is passed in then don't re-calculate path
-            mas_optimized_path = self.train(satellites=satellites, start_index=start_index, end_index=end_index)
+            mas_optimized_path = self.train_qlearning(satellites=satellites, start_index=start_index, end_index=end_index)
         else:
             start_index = mas_optimized_path[0].index
             end_index = mas_optimized_path[-1].index
