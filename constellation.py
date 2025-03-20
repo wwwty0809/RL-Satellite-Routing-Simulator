@@ -287,7 +287,130 @@ class Constellation:
 
         return connections
 
+
     def compare_routing_methods(self, satellites, start_index=None, end_index=None, mas_optimized_path=[], non_optimized_path=[]):
+        # MAS-optimized Path using Q-Learning
+        if(non_optimized_path == []): # If a path is passed in then don't re-calculate path
+            mas_optimized_path = self.train(satellites=satellites, start_index=start_index, end_index=end_index)
+        else:
+            start_index = mas_optimized_path[0].index
+            end_index = mas_optimized_path[-1].index
+
+        # Non-optimized Path using Flooding
+        if(non_optimized_path == []): # If a path is passed in then don't re-calculate path
+            non_optimized_path = self.flood(satellites=satellites, start_index=start_index, end_index=end_index)
+
+        # DQN-optimized Path
+        dqn_optimized_path = self.train_dqn(satellites=satellites, start_index=start_index, end_index=end_index)
+
+        # Initialize congestion counts
+        flooding_congestion_counts = {"low": 0, "medium": 0, "high": 0}
+        multiagent_congestion_counts = {"low": 0, "medium": 0, "high": 0}
+        dqn_congestion_counts = {"low": 0, "medium": 0, "high": 0}
+
+        # Initialize delay counts
+        flooding_delay_counts = {"low": 0, "medium": 0, "high": 0}
+        multiagent_delay_counts = {"low": 0, "medium": 0, "high": 0}
+        dqn_delay_counts = {"low": 0, "medium": 0, "high": 0}
+
+        # Count congestion for the flooding algorithm path
+        for connection in non_optimized_path:
+            sat1, sat2 = connection
+            flooding_congestion_counts[sat1.check_congestion()] += 1
+            flooding_congestion_counts[sat2.check_congestion()] += 1
+        
+        # Count congestion for the multiagent routing algorithm path
+        for i in range(len(mas_optimized_path) - 1):
+            sat1 = mas_optimized_path[i]
+            sat2 = mas_optimized_path[i + 1]
+            multiagent_congestion_counts[sat1.check_congestion()] += 1
+            multiagent_congestion_counts[sat2.check_congestion()] += 1
+
+        # Count congestion for the DQN routing algorithm path
+        for i in range(len(dqn_optimized_path) - 1):
+            sat1 = dqn_optimized_path[i]
+            sat2 = dqn_optimized_path[i + 1]
+            dqn_congestion_counts[sat1.check_congestion()] += 1
+            dqn_congestion_counts[sat2.check_congestion()] += 1
+
+        # Count delay for the flooding algorithm path
+        for connection in non_optimized_path:
+            sat1, sat2 = connection
+            delay_state1 = sat1.check_latency(sat2)
+            delay_state2 = sat2.check_latency(sat1)
+            flooding_delay_counts[delay_state1] += 1
+            flooding_delay_counts[delay_state2] += 1
+        
+        # Count delay for the multiagent routing algorithm path
+        for i in range(len(mas_optimized_path) - 1):
+            sat1 = mas_optimized_path[i]
+            sat2 = mas_optimized_path[i + 1]
+            delay_state1 = sat1.check_latency(sat2)
+            delay_state2 = sat2.check_latency(sat1)
+            multiagent_delay_counts[delay_state1] += 1
+            multiagent_delay_counts[delay_state2] += 1
+
+        # Count delay for the DQN routing algorithm path
+        for i in range(len(dqn_optimized_path) - 1):
+            sat1 = dqn_optimized_path[i]
+            sat2 = dqn_optimized_path[i + 1]
+            delay_state1 = sat1.check_latency(sat2)
+            delay_state2 = sat2.check_latency(sat1)
+            dqn_delay_counts[delay_state1] += 1
+            dqn_delay_counts[delay_state2] += 1
+
+
+        mas_optimized_stats = {
+            'path': [sat.index for sat in mas_optimized_path],
+            'distance': 0,
+            'num_satellites': len(mas_optimized_path),
+            'true_distance' : Satellite.distance_matrix[start_index][end_index],
+            'number_of_congested_satellites': multiagent_congestion_counts,
+            'number_of_delayed_satellites': multiagent_delay_counts,
+        }
+
+        non_optimized_stats = {
+            'path': [[sat[0].index, sat[1].index] for sat in non_optimized_path],
+            'distance': 0,
+            'num_satellites': len(non_optimized_path),
+            'true_distance' : Satellite.distance_matrix[start_index][end_index],
+            'number_of_congested_satellites': flooding_congestion_counts,
+            'number_of_delayed_satellites': flooding_delay_counts,
+        }
+
+        dqn_optimized_stats = {
+            'path': [sat.index for sat in dqn_optimized_path],
+            'distance': 0,
+            'num_satellites': len(dqn_optimized_path),
+            'true_distance' : Satellite.distance_matrix[start_index][end_index],
+            'number_of_congested_satellites': dqn_congestion_counts,
+            'number_of_delayed_satellites': dqn_delay_counts,
+        }
+
+        # Calculate total distance for MAS-optimized route
+        if len(mas_optimized_path) > 1:
+            for i in range(len(mas_optimized_path) - 1):
+                a = mas_optimized_path[i].index
+                b = mas_optimized_path[i+1].index
+                mas_optimized_stats['distance'] += Satellite.distance_matrix[a][b]
+
+        # Calculate total distance for non-optimized route
+        if len(non_optimized_path) > 1:
+            for i in range(len(non_optimized_path) - 1):
+                a = non_optimized_path[i][0].index
+                b = non_optimized_path[i][1].index
+                non_optimized_stats['distance'] += Satellite.distance_matrix[a][b]
+
+        # Calculate total distance for DQN-optimized route
+        if len(dqn_optimized_path) > 1:
+            for i in range(len(dqn_optimized_path) - 1):
+                a = dqn_optimized_path[i].index
+                b = dqn_optimized_path[i+1].index
+                dqn_optimized_stats['distance'] += Satellite.distance_matrix[a][b]
+
+        return {"optimal": mas_optimized_stats, "non-optimal": non_optimized_stats, "dqn-optimal": dqn_optimized_stats}
+
+    def compare_routing_methods_qlearning(self, satellites, start_index=None, end_index=None, mas_optimized_path=[], non_optimized_path=[]):
         # MAS-optimized Path using Q-Learning
         if(non_optimized_path == []): # If a path is passed in then don't re-calculate path
             mas_optimized_path = self.train_qlearning(satellites=satellites, start_index=start_index, end_index=end_index)
