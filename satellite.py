@@ -103,6 +103,11 @@ class Satellite:
         delay_state = self.check_latency(endpoint_satellite)
         congestion_state = self.check_congestion()
         return (delay_state, congestion_state)
+    
+    def get_state_dqn(self, endpoint_satellite):
+        delay_state = self.check_latency(endpoint_satellite)
+        congestion_state = self.check_congestion()
+        return (delay_state, congestion_state)
 
     def get_possible_actions(self):
         possible_actions = []
@@ -120,8 +125,9 @@ class Satellite:
                             possible_actions.append(sat)
                     else:
                         possible_actions.append(sat)
-               
-
+                
+        # print(f"Possible actions length: {len(possible_actions)}")
+        # print(f"Possible actions: {possible_actions}")
         return possible_actions
 
     def get_reward_qlearning(self, state, is_final=False, relay_penalty=-1):
@@ -141,7 +147,7 @@ class Satellite:
         q_new = q_current + self.ALPHA * (reward + self.GAMMA * max_q_next - q_current)
         self.Q[(state_current, action_current)] = q_new
 
-    def choose_action(self, state_current, possible_actions):
+    def qlearning_choose_action(self, state_current, possible_actions):
         if np.random.rand() < self.EPSILON: # Exploration
             return np.random.choice(possible_actions)
         else: # Exploitation

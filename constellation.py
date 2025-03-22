@@ -20,11 +20,15 @@ class DQN(nn.Module):
         x = torch.relu(self.fc2(x))
         return self.fc3(x)
 
+state_mapping = {
+    'low': [0],
+    'medium': [1],
+    'high': [2]
+}
 
 class Constellation:
     MAX_ITERATIONS = 500
     iteration_count = 0
-
 
   # 新增DQN相关属性
     REPLAY_MEMORY_SIZE = 10000
@@ -45,12 +49,16 @@ class Constellation:
         
     def train_dqn(self, satellites, start_index, end_index):
         self.precompute_matrices(satellites)
-        start_satellite = self.satellites[start_index]
-        end_satellite = self.satellites[end_index]
+        start_satellite = satellites[start_index]
+        end_satellite = satellites[end_index]
 
-        # 初始化DQN模型
-        input_dim = len(start_satellite.get_state(end_satellite.index))
-        output_dim = len(start_satellite.get_possible_actions())
+        # 初始化 DQN 模型
+        input_dim = len(self.convert_state_to_vector(start_satellite.get_state(end_satellite.index)))
+        
+        print(f"Input dimension: {input_dim}")  # 调试信息
+        
+        output_dim = len(satellites)  # 固定输出维度为所有卫星的数量
+        print(f"Output dimension: {output_dim}")  # 调试信息
         self.dqn_model = DQN(input_dim, output_dim)
         self.target_dqn_model = DQN(input_dim, output_dim)
         self.target_dqn_model.load_state_dict(self.dqn_model.state_dict())
@@ -58,11 +66,11 @@ class Constellation:
 
         print("Starting DQN Training:")
         for i in range(self.MAX_ITERATIONS):
-            print(f"\t{i+1}/{self.MAX_ITERATIONS}")
+            print(f"\t{i + 1}/{self.MAX_ITERATIONS}")
             self.iteration_count = i + 1
             optimal_path = self.train_dqn_iteration(start_satellite, end_satellite)
 
-        print("Training complete, optimal path:", [sat.index for sat in optimal_path])
+        print("Training complete, DQN optimal path:", [sat.index for sat in optimal_path])
         return optimal_path
 
     def train_dqn_iteration(self, start_satellite, end_satellite):
@@ -82,13 +90,34 @@ class Constellation:
                 break
 
             if random.random() < self.EPSILON:
-                action_index = random.randint(0, len(possible_actions) - 1)
+                    action_index = random.randint(0, len(possible_actions) - 1)
             else:
-                state_tensor = torch.FloatTensor(state_current).unsqueeze(0)
-                q_values = self.dqn_model(state_tensor)
-                action_index = torch.argmax(q_values).item()
+                state_vector = self.convert_state_to_vector(state_current)
+                #print(f"State vector: {state_vector}")  # 调试信息
+                state_tensor = torch.FloatTensor(state_vector).unsqueeze(0)
+                #print(f"State tensor: {state_tensor}")  # 调试信息
+                actions_values = self.dqn_model(state_tensor)             
+                
+                 # 创建掩码，将不可行的动作对应的 Q 值设置为 -inf
+                mask = [1 if sat in possible_actions else -float('inf') for sat in self.satellites]
+                masked_actions_values = actions_values[0] + torch.tensor(mask, dtype=torch.float32)
+                # print(f"Masked actions values: {masked_actions_values}")  # 调试信息
+                action_index = torch.argmax(masked_actions_values).item()
+                # print(f"Action index: {action_index}")  # 调试信息
+                # print(f"Possible actions: {possible_actions}")  # 调试信息
+                
+                # 确保 action_index 对应的卫星在 possible_actions 中
+                if self.satellites[action_index] not in possible_actions:
+                    print(f"Warning: Action index {action_index} corresponds to an unreachable satellite. Using random action.")
+                    action_index = random.randint(0, len(possible_actions) - 1)
 
-            action_current = possible_actions[action_index]
+                # 修改点：增加索引边界检查
+                # if action_index >= len(possible_actions):
+                #     print(f"Warning: Action index {action_index} is out of bounds. Using random action.")
+                #     action_index = random.randint(0, len(possible_actions) - 1)
+                #     print(f"Selected action index: {action_index}, Possible actions length: {len(possible_actions)}")  # 调试信息
+            #print(self.satellites[action_index])
+            action_current = self.satellites[action_index]
             next_satellite = action_current
 
             is_final = next_satellite == end_satellite
@@ -98,7 +127,7 @@ class Constellation:
             # 存储经验到回放缓冲区
             self.replay_memory.append((state_current, action_index, reward, state_next, is_final))
 
-            # 训练DQN模型
+            # 训练 DQN 模型
             if len(self.replay_memory) >= self.BATCH_SIZE:
                 self.train_dqn_from_memory()
 
@@ -125,25 +154,46 @@ class Constellation:
         minibatch = random.sample(self.replay_memory, self.BATCH_SIZE)
         states, actions, rewards, next_states, dones = zip(*minibatch)
 
+        states = [self.convert_state_to_vector(state) for state in states]
+        next_states = [self.convert_state_to_vector(state) for state in next_states]
+
         states = torch.FloatTensor(states)
         actions = torch.LongTensor(actions)
         rewards = torch.FloatTensor(rewards)
         next_states = torch.FloatTensor(next_states)
         dones = torch.FloatTensor(dones)
 
-        q_values = self.dqn_model(states)
-        next_q_values = self.target_dqn_model(next_states)
-        max_next_q_values = torch.max(next_q_values, dim=1)[0]
+        actions_values = self.dqn_model(states)
+        next_actions_values = self.target_dqn_model(next_states)
+        max_next_actions_values = torch.max(next_actions_values, dim=1)[0]
 
-        target_q_values = q_values.clone()
+        target_actions_values = actions_values.clone()
         for i in range(self.BATCH_SIZE):
-            target_q_values[i][actions[i]] = rewards[i] + (1 - dones[i]) * self.GAMMA * max_next_q_values[i]
+            # 确保动作索引在有效范围内
+            action_index = actions[i].item()
+            if action_index < target_actions_values.shape[1]:
+                target_actions_values[i][action_index] = rewards[i] + (1 - dones[i]) * self.GAMMA * max_next_actions_values[i]
+            else:
+                print(f"Warning: Action index {action_index} is out of bounds for target_actions_values with shape {target_actions_values.shape}. Skipping update.")
+                print(f"States shape: {states.shape}, Actions: {actions}, Rewards shape: {rewards.shape}, Next states shape: {next_states.shape}, Dones shape: {dones.shape}")  # 调试信息
 
-        loss = nn.MSELoss()(q_values, target_q_values)
+        loss = nn.MSELoss()(actions_values, target_actions_values)
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
+    def convert_state_to_vector(self, state):
+            vector = []
+           # print(f"State: {state}")  # 调试信息
+            for s in state:
+                # print(f"State element: {s}")  # 调试信息
+                # print(f"State mapping: {state_mapping[s]}")  # 调试信息
+                vector.extend(state_mapping[s])
+            
+            # print(f"State: {state}, Vector: {vector}")  # 调试信息
+            
+            return vector
+        
     def precompute_matrices(self, satellites):
         self.satellites = satellites
         num_satellites = len(self.satellites)
@@ -201,7 +251,7 @@ class Constellation:
                 # No possible actions; terminate the episode
                 break
 
-            action_current = current_satellite.choose_action(
+            action_current = current_satellite.qlearning_choose_action(
                 state_current, possible_actions
             )
             next_satellite = action_current
@@ -239,7 +289,7 @@ class Constellation:
 
         print("Starting Q-Learning Training:")
         for i in range(self.MAX_ITERATIONS):
-            print(f"\t{i+1}/{self.MAX_ITERATIONS}")
+            #print(f"\t{i+1}/{self.MAX_ITERATIONS}")
             self.iteration_count = i + 1
             # Reset connections for all satellites
             # for sat in self.satellites:
@@ -248,7 +298,7 @@ class Constellation:
             # Train for one episode
             optimal_path = self.train_qlearning_iteration(start_satellite, end_satellite)
 
-        print("Training complete, optimal path:", [sat.index for sat in optimal_path])
+        print("Training complete, qlearning optimal path:", [sat.index for sat in optimal_path])
         return optimal_path
 
     def train_wrapper(self, satellites, start_index, end_index, results):
@@ -288,17 +338,17 @@ class Constellation:
         return connections
 
 
-    def compare_routing_methods(self, satellites, start_index=None, end_index=None, mas_optimized_path=[], non_optimized_path=[]):
+    def compare_routing_methods(self, satellites, start_index=None, end_index=None, mas_optimized_path=[], flood_optimized_path=[]):
         # MAS-optimized Path using Q-Learning
-        if(non_optimized_path == []): # If a path is passed in then don't re-calculate path
-            mas_optimized_path = self.train(satellites=satellites, start_index=start_index, end_index=end_index)
+        if(flood_optimized_path == []): # If a path is passed in then don't re-calculate path
+            mas_optimized_path = self.train_qlearning(satellites=satellites, start_index=start_index, end_index=end_index)
         else:
             start_index = mas_optimized_path[0].index
             end_index = mas_optimized_path[-1].index
 
         # Non-optimized Path using Flooding
-        if(non_optimized_path == []): # If a path is passed in then don't re-calculate path
-            non_optimized_path = self.flood(satellites=satellites, start_index=start_index, end_index=end_index)
+        if(flood_optimized_path == []): # If a path is passed in then don't re-calculate path
+            flood_optimized_path = self.flood(satellites=satellites, start_index=start_index, end_index=end_index)
 
         # DQN-optimized Path
         dqn_optimized_path = self.train_dqn(satellites=satellites, start_index=start_index, end_index=end_index)
@@ -314,7 +364,7 @@ class Constellation:
         dqn_delay_counts = {"low": 0, "medium": 0, "high": 0}
 
         # Count congestion for the flooding algorithm path
-        for connection in non_optimized_path:
+        for connection in flood_optimized_path:
             sat1, sat2 = connection
             flooding_congestion_counts[sat1.check_congestion()] += 1
             flooding_congestion_counts[sat2.check_congestion()] += 1
@@ -334,7 +384,7 @@ class Constellation:
             dqn_congestion_counts[sat2.check_congestion()] += 1
 
         # Count delay for the flooding algorithm path
-        for connection in non_optimized_path:
+        for connection in flood_optimized_path:
             sat1, sat2 = connection
             delay_state1 = sat1.check_latency(sat2)
             delay_state2 = sat2.check_latency(sat1)
@@ -370,9 +420,9 @@ class Constellation:
         }
 
         non_optimized_stats = {
-            'path': [[sat[0].index, sat[1].index] for sat in non_optimized_path],
+            'path': [[sat[0].index, sat[1].index] for sat in flood_optimized_path],
             'distance': 0,
-            'num_satellites': len(non_optimized_path),
+            'num_satellites': len(flood_optimized_path),
             'true_distance' : Satellite.distance_matrix[start_index][end_index],
             'number_of_congested_satellites': flooding_congestion_counts,
             'number_of_delayed_satellites': flooding_delay_counts,
@@ -395,10 +445,10 @@ class Constellation:
                 mas_optimized_stats['distance'] += Satellite.distance_matrix[a][b]
 
         # Calculate total distance for non-optimized route
-        if len(non_optimized_path) > 1:
-            for i in range(len(non_optimized_path) - 1):
-                a = non_optimized_path[i][0].index
-                b = non_optimized_path[i][1].index
+        if len(flood_optimized_path) > 1:
+            for i in range(len(flood_optimized_path) - 1):
+                a = flood_optimized_path[i][0].index
+                b = flood_optimized_path[i][1].index
                 non_optimized_stats['distance'] += Satellite.distance_matrix[a][b]
 
         # Calculate total distance for DQN-optimized route
@@ -408,19 +458,19 @@ class Constellation:
                 b = dqn_optimized_path[i+1].index
                 dqn_optimized_stats['distance'] += Satellite.distance_matrix[a][b]
 
-        return {"optimal": mas_optimized_stats, "non-optimal": non_optimized_stats, "dqn-optimal": dqn_optimized_stats}
+        return {"qlearing": mas_optimized_stats, "flood": non_optimized_stats, "dqn": dqn_optimized_stats}
 
-    def compare_routing_methods_qlearning(self, satellites, start_index=None, end_index=None, mas_optimized_path=[], non_optimized_path=[]):
+    def compare_routing_methods_qlearning(self, satellites, start_index=None, end_index=None, mas_optimized_path=[], flood_optimized_path=[]):
         # MAS-optimized Path using Q-Learning
-        if(non_optimized_path == []): # If a path is passed in then don't re-calculate path
+        if(flood_optimized_path == []): # If a path is passed in then don't re-calculate path
             mas_optimized_path = self.train_qlearning(satellites=satellites, start_index=start_index, end_index=end_index)
         else:
             start_index = mas_optimized_path[0].index
             end_index = mas_optimized_path[-1].index
 
         # Non-optimized Path using Flooding
-        if(non_optimized_path == []): # If a path is passed in then don't re-calculate path
-            non_optimized_path = self.flood(satellites=satellites, start_index=start_index, end_index=end_index)
+        if(flood_optimized_path == []): # If a path is passed in then don't re-calculate path
+            flood_optimized_path = self.flood(satellites=satellites, start_index=start_index, end_index=end_index)
 
         # Initialize congestion counts
         flooding_congestion_counts = {"low": 0, "medium": 0, "high": 0}
@@ -431,7 +481,7 @@ class Constellation:
         multiagent_delay_counts = {"low": 0, "medium": 0, "high": 0}
 
         # Count congestion for the flooding algorithm path
-        for connection in non_optimized_path:
+        for connection in flood_optimized_path:
             sat1, sat2 = connection
             flooding_congestion_counts[sat1.check_congestion()] += 1
             flooding_congestion_counts[sat2.check_congestion()] += 1
@@ -444,7 +494,7 @@ class Constellation:
             multiagent_congestion_counts[sat2.check_congestion()] += 1
 
         # Count delay for the flooding algorithm path
-        for connection in non_optimized_path:
+        for connection in flood_optimized_path:
             sat1, sat2 = connection
             delay_state1 = sat1.check_latency(sat2)
             delay_state2 = sat2.check_latency(sat1)
@@ -471,9 +521,9 @@ class Constellation:
         }
 
         non_optimized_stats = {
-            'path': [[sat[0].index, sat[1].index] for sat in non_optimized_path],
+            'path': [[sat[0].index, sat[1].index] for sat in flood_optimized_path],
             'distance': 0,
-            'num_satellites': len(non_optimized_path),
+            'num_satellites': len(flood_optimized_path),
             'true_distance' : Satellite.distance_matrix[start_index][end_index],
             'number_of_congested_satellites': flooding_congestion_counts,
             'number_of_delayed_satellites': flooding_delay_counts,
@@ -487,10 +537,10 @@ class Constellation:
                 mas_optimized_stats['distance'] += Satellite.distance_matrix[a][b]
 
         # Calculate total distance for non-optimized route
-        if len(non_optimized_path) > 1:
-            for i in range(len(non_optimized_path) - 1):
-                a = non_optimized_path[i][0].index
-                b = non_optimized_path[i][1].index
+        if len(flood_optimized_path) > 1:
+            for i in range(len(flood_optimized_path) - 1):
+                a = flood_optimized_path[i][0].index
+                b = flood_optimized_path[i][1].index
                 non_optimized_stats['distance'] += Satellite.distance_matrix[a][b]
 
-        return {"optimal": mas_optimized_stats, "non-optimal": non_optimized_stats}
+        return {"qlearning": mas_optimized_stats, "flood": non_optimized_stats}
