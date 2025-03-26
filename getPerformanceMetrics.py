@@ -8,9 +8,9 @@ from scipy.stats import linregress
 import tensorflow as tf
 
 def simulateTest():
-    test_size = 100
+    test_size = 3
 
-    num_satellites = 100 # Initialize with 100 satellites
+    num_satellites = 50 # Initialize with 100 satellites
     satellites = [
         Satellite(
             longitude = np.random.uniform(0, 360),
@@ -294,7 +294,7 @@ if __name__ == "__main__":
     with open("output.json", "r") as load_file:
         data = json.load(load_file)
 
-    descriptiveStatistics(data)
-    plotScatterPlot(data)
+    # descriptiveStatistics(data)
+    #plotScatterPlot(data)
     plotDelayedPaths(data)
     plotCongestedPaths(data)

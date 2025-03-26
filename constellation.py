@@ -27,17 +27,17 @@ state_mapping = {
 }
 
 class Constellation:
-    MAX_ITERATIONS = 500
+    MAX_ITERATIONS = 300
     iteration_count = 0
 
   # 新增DQN相关属性
     REPLAY_MEMORY_SIZE = 10000
-    BATCH_SIZE = 32
+    BATCH_SIZE = 1280
     GAMMA = 0.95
     EPSILON = 0.1
     EPSILON_DECAY = 0.995
     EPSILON_MIN = 0.01
-
+    TARGET_UPDATE = 200
 
     def __init__(self):
         self.replay_memory = deque(maxlen=self.REPLAY_MEMORY_SIZE)
@@ -45,7 +45,14 @@ class Constellation:
         self.target_dqn_model = None
         self.optimizer = None
         
+    def reset_dqn(self, start_satellite, end_satellite):
+   
+        # 重置所有卫星的连接数
+        for sat in self.satellites:
+            sat.num_connections = 0
         
+        # 返回起始卫星的初始状态
+        return start_satellite.get_state(end_satellite.index)   
         
     def train_dqn(self, satellites, start_index, end_index):
         self.precompute_matrices(satellites)
@@ -55,11 +62,11 @@ class Constellation:
         # 初始化 DQN 模型
         input_dim = len(self.convert_state_to_vector(start_satellite.get_state(end_satellite.index)))
         
-        print(f"Input dimension: {input_dim}")  # 调试信息
-        
+        # print(f"Input dimension: {input_dim}")  # 调试信息
         output_dim = len(satellites)  # 固定输出维度为所有卫星的数量
-        print(f"Output dimension: {output_dim}")  # 调试信息
+        #print(f"Output dimension: {output_dim}")  # 调试信息
         self.dqn_model = DQN(input_dim, output_dim)
+        # 复制相同的参数来初始化目标网络Q
         self.target_dqn_model = DQN(input_dim, output_dim)
         self.target_dqn_model.load_state_dict(self.dqn_model.state_dict())
         self.optimizer = optim.Adam(self.dqn_model.parameters(), lr=0.001)
@@ -69,11 +76,16 @@ class Constellation:
             print(f"\t{i + 1}/{self.MAX_ITERATIONS}")
             self.iteration_count = i + 1
             optimal_path = self.train_dqn_iteration(start_satellite, end_satellite)
+            
 
         print("Training complete, DQN optimal path:", [sat.index for sat in optimal_path])
         return optimal_path
 
     def train_dqn_iteration(self, start_satellite, end_satellite):
+        
+        # 重置环境并获取初始状态
+        start_satellite = self.reset_dqn(start_satellite, end_satellite)
+        
         current_satellite = start_satellite
         path = [current_satellite]
         max_steps = 10000
@@ -111,12 +123,7 @@ class Constellation:
                     print(f"Warning: Action index {action_index} corresponds to an unreachable satellite. Using random action.")
                     action_index = random.randint(0, len(possible_actions) - 1)
 
-                # 修改点：增加索引边界检查
-                # if action_index >= len(possible_actions):
-                #     print(f"Warning: Action index {action_index} is out of bounds. Using random action.")
-                #     action_index = random.randint(0, len(possible_actions) - 1)
-                #     print(f"Selected action index: {action_index}, Possible actions length: {len(possible_actions)}")  # 调试信息
-            #print(self.satellites[action_index])
+               
             action_current = self.satellites[action_index]
             next_satellite = action_current
 
@@ -127,12 +134,12 @@ class Constellation:
             # 存储经验到回放缓冲区
             self.replay_memory.append((state_current, action_index, reward, state_next, is_final))
 
-            # 训练 DQN 模型
+            # 当经验池超过一定数量后，训练网络
             if len(self.replay_memory) >= self.BATCH_SIZE:
                 self.train_dqn_from_memory()
-
+                
             # 更新目标网络
-            if step % 10 == 0:
+            if step % self.TARGET_UPDATE == 0:
                 self.target_dqn_model.load_state_dict(self.dqn_model.state_dict())
 
             # Move to the next satellite
@@ -338,7 +345,7 @@ class Constellation:
         return connections
 
 
-    def compare_routing_methods(self, satellites, start_index=None, end_index=None, mas_optimized_path=[], flood_optimized_path=[]):
+    def compare_routing_methods(self, satellites, start_index=None, end_index=None, mas_optimized_path=[], flood_optimized_path=[], dqn_optimized_path=[]):
         # MAS-optimized Path using Q-Learning
         if(flood_optimized_path == []): # If a path is passed in then don't re-calculate path
             mas_optimized_path = self.train_qlearning(satellites=satellites, start_index=start_index, end_index=end_index)
@@ -355,12 +362,12 @@ class Constellation:
 
         # Initialize congestion counts
         flooding_congestion_counts = {"low": 0, "medium": 0, "high": 0}
-        multiagent_congestion_counts = {"low": 0, "medium": 0, "high": 0}
+        qlearning_congestion_counts = {"low": 0, "medium": 0, "high": 0}
         dqn_congestion_counts = {"low": 0, "medium": 0, "high": 0}
 
         # Initialize delay counts
         flooding_delay_counts = {"low": 0, "medium": 0, "high": 0}
-        multiagent_delay_counts = {"low": 0, "medium": 0, "high": 0}
+        qlearning_delay_counts = {"low": 0, "medium": 0, "high": 0}
         dqn_delay_counts = {"low": 0, "medium": 0, "high": 0}
 
         # Count congestion for the flooding algorithm path
@@ -369,12 +376,12 @@ class Constellation:
             flooding_congestion_counts[sat1.check_congestion()] += 1
             flooding_congestion_counts[sat2.check_congestion()] += 1
         
-        # Count congestion for the multiagent routing algorithm path
+        # Count congestion for the qlearning routing algorithm path
         for i in range(len(mas_optimized_path) - 1):
             sat1 = mas_optimized_path[i]
             sat2 = mas_optimized_path[i + 1]
-            multiagent_congestion_counts[sat1.check_congestion()] += 1
-            multiagent_congestion_counts[sat2.check_congestion()] += 1
+            qlearning_congestion_counts[sat1.check_congestion()] += 1
+            qlearning_congestion_counts[sat2.check_congestion()] += 1
 
         # Count congestion for the DQN routing algorithm path
         for i in range(len(dqn_optimized_path) - 1):
@@ -391,14 +398,14 @@ class Constellation:
             flooding_delay_counts[delay_state1] += 1
             flooding_delay_counts[delay_state2] += 1
         
-        # Count delay for the multiagent routing algorithm path
+        # Count delay for the qlearning routing algorithm path
         for i in range(len(mas_optimized_path) - 1):
             sat1 = mas_optimized_path[i]
             sat2 = mas_optimized_path[i + 1]
             delay_state1 = sat1.check_latency(sat2)
             delay_state2 = sat2.check_latency(sat1)
-            multiagent_delay_counts[delay_state1] += 1
-            multiagent_delay_counts[delay_state2] += 1
+            qlearning_delay_counts[delay_state1] += 1
+            qlearning_delay_counts[delay_state2] += 1
 
         # Count delay for the DQN routing algorithm path
         for i in range(len(dqn_optimized_path) - 1):
@@ -415,8 +422,8 @@ class Constellation:
             'distance': 0,
             'num_satellites': len(mas_optimized_path),
             'true_distance' : Satellite.distance_matrix[start_index][end_index],
-            'number_of_congested_satellites': multiagent_congestion_counts,
-            'number_of_delayed_satellites': multiagent_delay_counts,
+            'number_of_congested_satellites': qlearning_congestion_counts,
+            'number_of_delayed_satellites': qlearning_delay_counts,
         }
 
         non_optimized_stats = {
@@ -474,11 +481,11 @@ class Constellation:
 
         # Initialize congestion counts
         flooding_congestion_counts = {"low": 0, "medium": 0, "high": 0}
-        multiagent_congestion_counts = {"low": 0, "medium": 0, "high": 0}
+        qlearning_congestion_counts = {"low": 0, "medium": 0, "high": 0}
 
         # Initialize delay counts
         flooding_delay_counts = {"low": 0, "medium": 0, "high": 0}
-        multiagent_delay_counts = {"low": 0, "medium": 0, "high": 0}
+        qlearning_delay_counts = {"low": 0, "medium": 0, "high": 0}
 
         # Count congestion for the flooding algorithm path
         for connection in flood_optimized_path:
@@ -486,12 +493,12 @@ class Constellation:
             flooding_congestion_counts[sat1.check_congestion()] += 1
             flooding_congestion_counts[sat2.check_congestion()] += 1
         
-        # Count congestion for the multiagent routing algorithm path
+        # Count congestion for the qlearning routing algorithm path
         for i in range(len(mas_optimized_path) - 1):
             sat1 = mas_optimized_path[i]
             sat2 = mas_optimized_path[i + 1]
-            multiagent_congestion_counts[sat1.check_congestion()] += 1
-            multiagent_congestion_counts[sat2.check_congestion()] += 1
+            qlearning_congestion_counts[sat1.check_congestion()] += 1
+            qlearning_congestion_counts[sat2.check_congestion()] += 1
 
         # Count delay for the flooding algorithm path
         for connection in flood_optimized_path:
@@ -501,14 +508,14 @@ class Constellation:
             flooding_delay_counts[delay_state1] += 1
             flooding_delay_counts[delay_state2] += 1
         
-        # Count delay for the multiagent routing algorithm path
+        # Count delay for the qlearning routing algorithm path
         for i in range(len(mas_optimized_path) - 1):
             sat1 = mas_optimized_path[i]
             sat2 = mas_optimized_path[i + 1]
             delay_state1 = sat1.check_latency(sat2)
             delay_state2 = sat2.check_latency(sat1)
-            multiagent_delay_counts[delay_state1] += 1
-            multiagent_delay_counts[delay_state2] += 1
+            qlearning_delay_counts[delay_state1] += 1
+            qlearning_delay_counts[delay_state2] += 1
 
 
         mas_optimized_stats = {
@@ -516,8 +523,8 @@ class Constellation:
             'distance': 0,
             'num_satellites': len(mas_optimized_path),
             'true_distance' : Satellite.distance_matrix[start_index][end_index],
-            'number_of_congested_satellites': multiagent_congestion_counts,
-            'number_of_delayed_satellites': multiagent_delay_counts,
+            'number_of_congested_satellites': qlearning_congestion_counts,
+            'number_of_delayed_satellites': qlearning_delay_counts,
         }
 
         non_optimized_stats = {
