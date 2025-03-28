@@ -8,6 +8,7 @@ from scipy.stats import linregress
 import tensorflow as tf
 
 def simulateTest():
+    
     test_size = 3
 
     num_satellites = 50 # Initialize with 100 satellites
@@ -20,7 +21,7 @@ def simulateTest():
         ) for _ in range(num_satellites)
     ]
 
-    network = Constellation()
+    network = Constellation(satellites)
     data = []
 
     for _ in range(test_size):
@@ -289,6 +290,8 @@ def plotCongestedPaths(data: list, output_flooding="flooding_congested_paths.png
     print(f"Optimal plot saved to {optimal_path}")
 
 if __name__ == "__main__":
+    
+    
     data = simulateTest()
     
     with open("output.json", "r") as load_file:

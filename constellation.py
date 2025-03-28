@@ -4,77 +4,240 @@ from satellite import Satellite
 import json
 import torch
 import torch.nn as nn
-import torch.optim as optim
+import torch.nn.functional as F
 import random
 from collections import deque
+import collections
 
-class DQN(nn.Module):
-    def __init__(self, input_dim, output_dim):
-        super(DQN, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 64)
-        self.fc2 = nn.Linear(64, 64)
-        self.fc3 = nn.Linear(64, output_dim)
 
-    def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        return self.fc3(x)
+# --------------------------------------- #
+# 经验回放池
+# --------------------------------------- #
 
+class ReplayBuffer():
+    def __init__(self, capacity):
+        # 创建一个先进先出的队列，最大长度为capacity，保证经验池的样本量不变
+        self.buffer = collections.deque(maxlen=capacity)
+    # 将数据以元组形式添加进经验池
+    def add(self, state, action, reward, next_state, done):
+        self.buffer.append((state, action, reward, next_state, done))
+    # 随机采样batch_size行数据
+    def sample(self, batch_size):
+        transitions = random.sample(self.buffer, batch_size)  # list, len=32
+        # *transitions代表取出列表中的值，即32项
+        state, action, reward, next_state, done = zip(*transitions)
+        return np.array(state), action, reward, np.array(next_state), done
+    # 目前队列长度
+    def size(self):
+        return len(self.buffer)
+
+# -------------------------------------- #
+# 构造深度学习网络，输入状态s，得到各个动作的reward
+# -------------------------------------- #
+
+class Net(nn.Module):
+    # 构造只有一个隐含层的网络
+    def __init__(self, n_states, n_hidden, n_actions):
+        super(Net, self).__init__()
+        # [b,n_states]-->[b,n_hidden]
+        self.fc1 = nn.Linear(n_states, n_hidden)
+        # [b,n_hidden]-->[b,n_actions]
+        self.fc2 = nn.Linear(n_hidden, n_actions)
+    # 前传
+    def forward(self, x):  # [b,n_states]
+        x = F.leaky_relu(self.fc1(x))
+        x = F.leaky_relu(self.fc2(x))
+        return x
+
+# -------------------------------------- #
+# 构造深度强化学习模型
+# -------------------------------------- #
+
+class DQN:
+    #（1）初始化
+    def __init__(self, n_states, n_hidden, n_actions,
+                 learning_rate, gamma, epsilon,
+                 target_update, device):
+        #self.satellites = satellites  # 存储卫星列表
+        
+        # 属性分配
+        self.n_states = n_states  # 状态的特征数
+        self.n_hidden = n_hidden  # 隐含层个数
+        self.n_actions = n_actions  # 动作数
+        self.learning_rate = learning_rate  # 训练时的学习率
+        self.gamma = gamma  # 折扣因子，对下一状态的回报的缩放
+        self.epsilon = epsilon  # 贪婪策略，有1-epsilon的概率探索
+        self.target_update = target_update  # 目标网络的参数的更新频率
+        self.device = device  # 在GPU计算
+        # 计数器，记录迭代次数
+        self.count = 0
+
+        # 构建2个神经网络，相同的结构，不同的参数
+        # 实例化训练网络  [b,4]-->[b,2]  输出动作对应的奖励
+        self.q_net = Net(self.n_states, self.n_hidden, self.n_actions)
+        # 实例化目标网络
+        self.target_q_net = Net(self.n_states, self.n_hidden, self.n_actions)
+
+        # 优化器，更新训练网络的参数
+        self.optimizer = torch.optim.Adam(self.q_net.parameters(), lr=self.learning_rate)
+        
+        
+          #（2）动作选择
+    def take_action(self, state_vector, possible_actions, satellites):  # epsilon-贪婪策略采取动作
+        # 将状态转换为张量
+        state_tensor = torch.FloatTensor(state_vector).unsqueeze(0)  
+        # 如果小于该值就取最大的值对应的索引
+        if np.random.random() < self.epsilon:  # 0-1
+            # 前向传播获取该状态对应的动作的reward
+            actions_value = self.q_net(state_tensor)
+
+                # 创建掩码，将不可行的动作对应的 Q 值设置为 -inf
+            mask = [0 if sat in possible_actions else -float('inf') for sat in satellites]
+            actions_values = actions_value[0] + torch.tensor(mask, dtype=torch.float32)
+           
+            # 获取reward最大值对应的动作索引
+            action_index = torch.argmax(actions_values).item()
+        # 如果大于该值就随机探索
+        else:
+            # 随机选择一个动作
+            action_index = np.random.randint(self.n_actions)
+        return action_index
+
+    #（3）网络训练
+    def update(self, transition_dict):  # 传入经验池中的batch个样本
+        # 获取当前时刻的状态 array_shape=[b,4]
+        states = torch.tensor(transition_dict['states'], dtype=torch.float)
+        # 获取当前时刻采取的动作 tuple_shape=[b]，维度扩充 [b,1]
+        actions = torch.tensor(transition_dict['actions']).view(-1,1)
+        # 当前状态下采取动作后得到的奖励 tuple=[b]，维度扩充 [b,1]
+        rewards = torch.tensor(transition_dict['rewards'], dtype=torch.float).view(-1,1)
+        # 下一时刻的状态 array_shape=[b,4]
+        next_states = torch.tensor(transition_dict['next_states'], dtype=torch.float)
+        # 是否到达目标 tuple_shape=[b]，维度变换[b,1]
+        dones = torch.tensor(transition_dict['dones'], dtype=torch.float).view(-1,1)
+
+        # 输入当前状态，得到采取各运动得到的奖励 [b,4]==>[b,2]==>[b,1]
+        # 根据actions索引在训练网络的输出的第1维度上获取对应索引的q值（state_value）
+        q_values = self.q_net(states).gather(1, actions)  # [b,1]
+        # 下一时刻的状态[b,4]-->目标网络输出下一时刻对应的动作q值[b,2]-->
+        # 选出下个状态采取的动作中最大的q值[b]-->维度调整[b,1]
+        max_next_q_values = self.target_q_net(next_states).max(1)[0].view(-1,1)
+        # 目标网络输出的当前状态的q(state_value)：即时奖励+折扣因子*下个时刻的最大回报
+        q_targets = rewards + self.gamma * max_next_q_values * (1-dones)
+
+        # 目标网络和训练网络之间的均方误差损失
+        dqn_loss = torch.mean(F.mse_loss(q_values, q_targets))
+        # PyTorch中默认梯度会累积,这里需要显式将梯度置为0
+        self.optimizer.zero_grad()
+        # 反向传播参数更新
+        dqn_loss.backward()
+        # 对训练网络更新
+        self.optimizer.step()
+
+        # 在一段时间后更新目标网络的参数
+        if self.count % self.target_update == 0:
+            # 将目标网络的参数替换成训练网络的参数
+            self.target_q_net.load_state_dict(
+                self.q_net.state_dict())
+        
+        self.count += 1
+    
+    def convert_state_to_vector(self, state):
+            vector = []
+           
+            for s in state:
+                vector.extend(state_mapping[s])
+  
+            return vector
+        
 state_mapping = {
     'low': [0],
     'medium': [1],
     'high': [2]
 }
 
+# GPU运算
+device = torch.device("cuda") if torch.cuda.is_available() \
+        else torch.device("cpu")
+        
+# 超参数
+capacity = 500  # 经验池容量
+lr = 2e-3  # 学习率
+gamma = 0.9  # 折扣因子
+epsilon = 0.9  # 贪心系数
+target_update = 200  # 目标网络的参数的更新频率
+batch_size = 32
+n_hidden = 128  # 隐含层神经元个数
+min_size = 200  # 经验池超过200后再训练
+return_list = []  # 记录每个回合的回报
+
+
 class Constellation:
     MAX_ITERATIONS = 300
     iteration_count = 0
-
-  # 新增DQN相关属性
-    REPLAY_MEMORY_SIZE = 10000
-    BATCH_SIZE = 1280
-    GAMMA = 0.95
-    EPSILON = 0.1
-    EPSILON_DECAY = 0.995
-    EPSILON_MIN = 0.01
-    TARGET_UPDATE = 200
-
-    def __init__(self):
-        self.replay_memory = deque(maxlen=self.REPLAY_MEMORY_SIZE)
-        self.dqn_model = None
-        self.target_dqn_model = None
-        self.optimizer = None
+    def __init__(self, satellites=None):
+            """
+            初始化星座网络
+            :param satellites: 可选的卫星列表，如果为None则创建空列表
+            """
+            self.satellites = satellites
+            self.start_index = None  # 初始化起点卫星
+            self.end_index = None    # 初始化终点卫星
+            self.precompute_matrices(self.satellites)  # 预计算矩阵
+            self.num_satellites = len(self.satellites)  # 卫星数量
         
-    def reset_dqn(self, start_satellite, end_satellite):
-   
-        # 重置所有卫星的连接数
+    def reset_dqn(self):
+        # 重置所有卫星的位置（随机经纬度）
         for sat in self.satellites:
-            sat.num_connections = 0
+            sat.longitude = np.random.uniform(0, 360)   # 经度范围: 0°~360°
+            sat.latitude = np.random.uniform(-90, 90)   # 纬度范围: -90°~90°
+            sat.num_connections = 0              # 卫星当前的活动连接数量，用于判断卫星的拥塞状态
+            sat.height = 0
+            sat.speed = 0.5
         
-        # 返回起始卫星的初始状态
-        return start_satellite.get_state(end_satellite.index)   
+        # 随机选择起点卫星
+        self.start_index = int(np.random.uniform(0, self.num_satellites))
+        
+        # 随机选择终点卫星（必须与起点不同）
+        while True:
+            self.end_index = int(np.random.uniform(0, self.num_satellites))
+            if self.end_index != self.start_index:
+                break
+        
+        # 重新计算卫星间的可见性、距离和延迟矩阵
+        self.precompute_matrices(self.satellites)
+        
+    
         
     def train_dqn(self, satellites, start_index, end_index):
         self.precompute_matrices(satellites)
         start_satellite = satellites[start_index]
         end_satellite = satellites[end_index]
+    
+        # 实例化经验池
+        self.replay_buffer = ReplayBuffer(capacity)
 
-        # 初始化 DQN 模型
+        # 实例化 DQN 模型
         input_dim = len(self.convert_state_to_vector(start_satellite.get_state(end_satellite.index)))
-        
-        # print(f"Input dimension: {input_dim}")  # 调试信息
         output_dim = len(satellites)  # 固定输出维度为所有卫星的数量
-        #print(f"Output dimension: {output_dim}")  # 调试信息
-        self.dqn_model = DQN(input_dim, output_dim)
-        # 复制相同的参数来初始化目标网络Q
-        self.target_dqn_model = DQN(input_dim, output_dim)
-        self.target_dqn_model.load_state_dict(self.dqn_model.state_dict())
-        self.optimizer = optim.Adam(self.dqn_model.parameters(), lr=0.001)
+        self.dqn_model = DQN(n_states=input_dim,
+            n_hidden=n_hidden,
+            n_actions=output_dim,
+            learning_rate=lr,
+            gamma=gamma,
+            epsilon=epsilon,
+            target_update=target_update,
+            device=device,)
+
 
         print("Starting DQN Training:")
         for i in range(self.MAX_ITERATIONS):
             print(f"\t{i + 1}/{self.MAX_ITERATIONS}")
             self.iteration_count = i + 1
+            
+            # 重置环境并获取初始状态
+            self.reset_dqn()
+            print("start",self.start_index)
             optimal_path = self.train_dqn_iteration(start_satellite, end_satellite)
             
 
@@ -83,66 +246,66 @@ class Constellation:
 
     def train_dqn_iteration(self, start_satellite, end_satellite):
         
-        # 重置环境并获取初始状态
-        start_satellite = self.reset_dqn(start_satellite, end_satellite)
-        
+
+        # 记录每个回合的回报
+        episode_return = 0
         current_satellite = start_satellite
         path = [current_satellite]
         max_steps = 10000
         step = 0
+        state_vector = current_satellite.get_state_vector_dqn(end_satellite.index)
         while current_satellite != end_satellite:
             if step > max_steps:
                 print(f"Max steps exceeded in iteration.")
                 break
 
-            state_current = current_satellite.get_state(end_satellite.index)
             possible_actions = current_satellite.get_possible_actions()
             if not possible_actions:
                 # No possible actions; terminate the episode
                 break
+            
 
-            if random.random() < self.EPSILON:
-                    action_index = random.randint(0, len(possible_actions) - 1)
-            else:
-                state_vector = self.convert_state_to_vector(state_current)
-                #print(f"State vector: {state_vector}")  # 调试信息
-                state_tensor = torch.FloatTensor(state_vector).unsqueeze(0)
-                #print(f"State tensor: {state_tensor}")  # 调试信息
-                actions_values = self.dqn_model(state_tensor)             
-                
-                 # 创建掩码，将不可行的动作对应的 Q 值设置为 -inf
-                mask = [1 if sat in possible_actions else -float('inf') for sat in self.satellites]
-                masked_actions_values = actions_values[0] + torch.tensor(mask, dtype=torch.float32)
-                # print(f"Masked actions values: {masked_actions_values}")  # 调试信息
-                action_index = torch.argmax(masked_actions_values).item()
-                # print(f"Action index: {action_index}")  # 调试信息
-                # print(f"Possible actions: {possible_actions}")  # 调试信息
-                
-                # 确保 action_index 对应的卫星在 possible_actions 中
-                if self.satellites[action_index] not in possible_actions:
-                    print(f"Warning: Action index {action_index} corresponds to an unreachable satellite. Using random action.")
-                    action_index = random.randint(0, len(possible_actions) - 1)
-
-               
+            # 获取当前状态下需要采取的动作
+            action_index = self.dqn_model.take_action(state_vector, possible_actions, self.satellites)
             action_current = self.satellites[action_index]
+            
+            if not action_current:
+                # No possible actions; terminate the episode
+                break
+            # 更新环境
             next_satellite = action_current
-
             is_final = next_satellite == end_satellite
-            state_next = next_satellite.get_state(end_satellite.index)
-            reward = current_satellite.get_reward_qlearning(state_next, is_final)
-
-            # 存储经验到回放缓冲区
-            self.replay_memory.append((state_current, action_index, reward, state_next, is_final))
+            next_state = next_satellite.get_state_vector_dqn(end_satellite.index)
+            #print("next_state:",next_state)
+            reward = current_satellite.get_reward_dqn(next_state, is_final)
+            
+            #next_state, reward, done, _ = env.step(action)
+            # 添加经验池
+            self.replay_buffer.add(state_vector, action_index, reward, next_state, is_final)
+            # 更新当前状态
+            state_vector = next_state
+            #print("state_vector:",state_vector)
+            # 更新回合回报
+            episode_return += reward
 
             # 当经验池超过一定数量后，训练网络
-            if len(self.replay_memory) >= self.BATCH_SIZE:
-                self.train_dqn_from_memory()
+            if self.replay_buffer.size() > min_size:
+                # 从经验池中随机抽样作为训练集
+                s, a, r, ns, d = self.replay_buffer.sample(batch_size)
+                # 构造训练集
+                transition_dict = {
+                    'states': s,
+                    'actions': a,
+                    'next_states': ns,
+                    'rewards': r,
+                    'dones': d,
+                }
                 
-            # 更新目标网络
-            if step % self.TARGET_UPDATE == 0:
-                self.target_dqn_model.load_state_dict(self.dqn_model.state_dict())
-
-            # Move to the next satellite
+                #print("transition_dict",transition_dict)
+                # 网络更新
+                self.dqn_model.update(transition_dict)
+            # 找到目标就结束
+            #if done: break
             current_satellite = next_satellite
             path.append(current_satellite)
 
@@ -151,43 +314,9 @@ class Constellation:
             if is_final:
                 break
 
-        # 衰减探索率
-        if self.EPSILON > self.EPSILON_MIN:
-            self.EPSILON *= self.EPSILON_DECAY
 
         return path
 
-    def train_dqn_from_memory(self):
-        minibatch = random.sample(self.replay_memory, self.BATCH_SIZE)
-        states, actions, rewards, next_states, dones = zip(*minibatch)
-
-        states = [self.convert_state_to_vector(state) for state in states]
-        next_states = [self.convert_state_to_vector(state) for state in next_states]
-
-        states = torch.FloatTensor(states)
-        actions = torch.LongTensor(actions)
-        rewards = torch.FloatTensor(rewards)
-        next_states = torch.FloatTensor(next_states)
-        dones = torch.FloatTensor(dones)
-
-        actions_values = self.dqn_model(states)
-        next_actions_values = self.target_dqn_model(next_states)
-        max_next_actions_values = torch.max(next_actions_values, dim=1)[0]
-
-        target_actions_values = actions_values.clone()
-        for i in range(self.BATCH_SIZE):
-            # 确保动作索引在有效范围内
-            action_index = actions[i].item()
-            if action_index < target_actions_values.shape[1]:
-                target_actions_values[i][action_index] = rewards[i] + (1 - dones[i]) * self.GAMMA * max_next_actions_values[i]
-            else:
-                print(f"Warning: Action index {action_index} is out of bounds for target_actions_values with shape {target_actions_values.shape}. Skipping update.")
-                print(f"States shape: {states.shape}, Actions: {actions}, Rewards shape: {rewards.shape}, Next states shape: {next_states.shape}, Dones shape: {dones.shape}")  # 调试信息
-
-        loss = nn.MSELoss()(actions_values, target_actions_values)
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
 
     def convert_state_to_vector(self, state):
             vector = []
@@ -299,8 +428,8 @@ class Constellation:
             #print(f"\t{i+1}/{self.MAX_ITERATIONS}")
             self.iteration_count = i + 1
             # Reset connections for all satellites
-            # for sat in self.satellites:
-            #     sat.num_connections = 0
+            for sat in self.satellites:
+                sat.num_connections = 0
             
             # Train for one episode
             optimal_path = self.train_qlearning_iteration(start_satellite, end_satellite)

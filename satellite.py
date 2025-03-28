@@ -1,5 +1,5 @@
 import numpy as np
-
+import torch
 class Satellite:
     EARTH_RADIUS = 6371
 
@@ -104,10 +104,31 @@ class Satellite:
         congestion_state = self.check_congestion()
         return (delay_state, congestion_state)
     
-    def get_state_dqn(self, endpoint_satellite):
+    def get_state_vector_dqn(self, endpoint_satellite):
         delay_state = self.check_latency(endpoint_satellite)
         congestion_state = self.check_congestion()
-        return (delay_state, congestion_state)
+        state = (delay_state, congestion_state)
+        state_vector = self.convert_state_to_vector(state)
+        
+
+        return state_vector
+
+
+    def convert_state_to_vector(self, state):
+        vector = []
+
+        state_mapping = {
+    'low': [0],
+    'medium': [1],
+    'high': [2]
+}
+        for s in state:
+            
+            vector.extend(state_mapping[s])
+      
+        return vector
+
+
 
     def get_possible_actions(self):
         possible_actions = []
@@ -129,15 +150,25 @@ class Satellite:
         # print(f"Possible actions length: {len(possible_actions)}")
         # print(f"Possible actions: {possible_actions}")
         return possible_actions
-
+ 
+    def get_reward_dqn(self, state, is_final=False, relay_penalty=-1):
+        # Calculate reward for given state
+        delay_state, congestion_state = state
+        delay_reward = {0: -1, 1: -3, 2: -6}[delay_state]
+        congestion_reward = {0: -1, 1: -3, 2: -6}[congestion_state]
+        total_reward = delay_reward + congestion_reward - relay_penalty
+        if is_final: # Reward for reaching the endpoint
+            total_reward += 200
+        return total_reward
+    
     def get_reward_qlearning(self, state, is_final=False, relay_penalty=-1):
         # Calculate reward for given state
         delay_state, congestion_state = state
-        delay_reward = {'low': -1, 'medium': -5, 'high': -10}[delay_state]
-        congestion_reward = {'low': -1, 'medium': -5, 'high': -10}[congestion_state]
+        delay_reward = {'low': -1, 'medium': -3, 'high': -6}[delay_state]
+        congestion_reward = {'low': -1, 'medium': -3, 'high': -6}[congestion_state]
         total_reward = delay_reward + congestion_reward - relay_penalty
         if is_final: # Reward for reaching the endpoint
-            total_reward += 100
+            total_reward += 200
         return total_reward
 
     def update_q_value(self, state_current, action_current, reward, state_next):
@@ -157,4 +188,4 @@ class Satellite:
             return np.random.choice(best_actions)
 
     def __repr__(self):
-        return f"sat_%03d" % self.index
+        return "%d" % self.index

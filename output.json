@@ -2,13 +2,37 @@
  {
   "qlearing": {
    "path": [
-    27,
-    41,
-    31
+    2,
+    4
    ],
-   "distance": 12428.206344117054,
-   "num_satellites": 3,
-   "true_distance": 11811.792092433772,
+   "distance": 4193.122452021084,
+   "num_satellites": 2,
+   "true_distance": 4193.122452021084,
+   "number_of_congested_satellites": {
+    "low": 2,
+    "medium": 0,
+    "high": 0
+   },
+   "number_of_delayed_satellites": {
+    "low": 0,
+    "medium": 2,
+    "high": 0
+   }
+  },
+  "flood": {
+   "path": [
+    [
+     2,
+     3
+    ],
+    [
+     2,
+     4
+    ]
+   ],
+   "distance": 2983.910600656734,
+   "num_satellites": 2,
+   "true_distance": 4193.122452021084,
    "number_of_congested_satellites": {
     "low": 4,
     "medium": 0,
@@ -16,119 +40,61 @@
    },
    "number_of_delayed_satellites": {
     "low": 0,
+    "medium": 4,
+    "high": 0
+   }
+  },
+  "dqn": {
+   "path": [
+    2,
+    4
+   ],
+   "distance": 4193.122452021084,
+   "num_satellites": 2,
+   "true_distance": 4193.122452021084,
+   "number_of_congested_satellites": {
+    "low": 2,
+    "medium": 0,
+    "high": 0
+   },
+   "number_of_delayed_satellites": {
+    "low": 0,
     "medium": 2,
+    "high": 0
+   }
+  }
+ },
+ {
+  "qlearing": {
+   "path": [
+    1,
+    16,
+    5,
+    9
+   ],
+   "distance": 14955.536112245925,
+   "num_satellites": 4,
+   "true_distance": 13230.10763119681,
+   "number_of_congested_satellites": {
+    "low": 6,
+    "medium": 0,
+    "high": 0
+   },
+   "number_of_delayed_satellites": {
+    "low": 0,
+    "medium": 4,
     "high": 2
    }
   },
   "flood": {
    "path": [
     [
-     27,
-     1
-    ],
-    [
-     27,
-     2
-    ],
-    [
-     27,
-     3
-    ],
-    [
-     27,
-     6
-    ],
-    [
-     27,
-     8
-    ],
-    [
-     27,
-     9
-    ],
-    [
-     27,
-     13
-    ],
-    [
-     27,
-     17
-    ],
-    [
-     27,
-     19
-    ],
-    [
-     27,
-     20
-    ],
-    [
-     27,
-     21
-    ],
-    [
-     27,
-     22
-    ],
-    [
-     27,
-     24
-    ],
-    [
-     27,
-     25
-    ],
-    [
-     27,
-     29
-    ],
-    [
-     27,
-     33
-    ],
-    [
-     27,
-     37
-    ],
-    [
-     27,
-     38
-    ],
-    [
-     27,
-     40
-    ],
-    [
-     27,
-     41
-    ],
-    [
-     27,
-     42
-    ],
-    [
-     27,
-     44
-    ],
-    [
-     27,
-     46
-    ],
-    [
-     27,
-     47
-    ],
-    [
-     27,
-     48
-    ],
-    [
-     27,
-     49
+     1,
+     0
     ],
     [
      1,
-     4
+     6
     ],
     [
      1,
@@ -136,178 +102,83 @@
     ],
     [
      1,
-     28
-    ],
-    [
-     1,
-     39
-    ],
-    [
-     1,
-     43
-    ],
-    [
-     2,
-     26
-    ],
-    [
-     2,
-     32
-    ],
-    [
-     2,
-     45
-    ],
-    [
-     3,
-     12
-    ],
-    [
-     3,
-     14
-    ],
-    [
-     9,
-     0
-    ],
-    [
-     9,
-     18
-    ],
-    [
-     9,
-     23
-    ],
-    [
-     9,
-     31
-    ]
-   ],
-   "distance": 235899.68063794653,
-   "num_satellites": 40,
-   "true_distance": 11811.792092433772,
-   "number_of_congested_satellites": {
-    "low": 80,
-    "medium": 0,
-    "high": 0
-   },
-   "number_of_delayed_satellites": {
-    "low": 2,
-    "medium": 18,
-    "high": 60
-   }
-  },
-  "dqn": {
-   "path": [
-    27,
-    21,
-    31
-   ],
-   "distance": 13432.814275243672,
-   "num_satellites": 3,
-   "true_distance": 11811.792092433772,
-   "number_of_congested_satellites": {
-    "low": 4,
-    "medium": 0,
-    "high": 0
-   },
-   "number_of_delayed_satellites": {
-    "low": 0,
-    "medium": 0,
-    "high": 4
-   }
-  }
- },
- {
-  "qlearing": {
-   "path": [
-    11,
-    16,
-    34
-   ],
-   "distance": 10624.311316912328,
-   "num_satellites": 3,
-   "true_distance": 8631.471780966449,
-   "number_of_congested_satellites": {
-    "low": 4,
-    "medium": 0,
-    "high": 0
-   },
-   "number_of_delayed_satellites": {
-    "low": 0,
-    "medium": 2,
-    "high": 2
-   }
-  },
-  "flood": {
-   "path": [
-    [
-     11,
-     0
-    ],
-    [
-     11,
-     5
-    ],
-    [
-     11,
      10
     ],
     [
-     11,
-     16
+     1,
+     11
     ],
     [
-     11,
-     18
+     1,
+     12
     ],
     [
-     11,
-     26
-    ],
-    [
-     11,
-     28
-    ],
-    [
-     11,
-     30
-    ],
-    [
-     11,
-     31
-    ],
-    [
-     11,
-     32
-    ],
-    [
-     11,
-     35
-    ],
-    [
-     11,
-     39
-    ],
-    [
-     11,
-     43
-    ],
-    [
-     11,
-     45
-    ],
-    [
-     0,
-     9
-    ],
-    [
-     0,
+     1,
      15
     ],
     [
-     0,
+     1,
+     16
+    ],
+    [
+     1,
+     19
+    ],
+    [
+     1,
      21
+    ],
+    [
+     1,
+     28
+    ],
+    [
+     1,
+     29
+    ],
+    [
+     1,
+     30
+    ],
+    [
+     1,
+     35
+    ],
+    [
+     1,
+     36
+    ],
+    [
+     1,
+     37
+    ],
+    [
+     1,
+     39
+    ],
+    [
+     1,
+     43
+    ],
+    [
+     1,
+     49
+    ],
+    [
+     0,
+     4
+    ],
+    [
+     0,
+     8
+    ],
+    [
+     0,
+     13
+    ],
+    [
+     0,
+     17
     ],
     [
      0,
@@ -315,169 +186,264 @@
     ],
     [
      0,
-     23
+     24
+    ],
+    [
+     0,
+     32
     ],
     [
      0,
      34
+    ],
+    [
+     0,
+     40
+    ],
+    [
+     0,
+     41
+    ],
+    [
+     0,
+     42
+    ],
+    [
+     0,
+     44
+    ],
+    [
+     0,
+     48
+    ],
+    [
+     11,
+     18
+    ],
+    [
+     11,
+     20
+    ],
+    [
+     11,
+     47
+    ],
+    [
+     12,
+     14
+    ],
+    [
+     12,
+     25
+    ],
+    [
+     12,
+     26
+    ],
+    [
+     12,
+     33
+    ],
+    [
+     16,
+     5
+    ],
+    [
+     4,
+     2
+    ],
+    [
+     4,
+     3
+    ],
+    [
+     4,
+     23
+    ],
+    [
+     4,
+     27
+    ],
+    [
+     4,
+     31
+    ],
+    [
+     4,
+     45
+    ],
+    [
+     4,
+     46
+    ],
+    [
+     17,
+     9
     ]
    ],
-   "distance": 111064.6423063233,
-   "num_satellites": 20,
-   "true_distance": 8631.471780966449,
+   "distance": 256481.33167696066,
+   "num_satellites": 48,
+   "true_distance": 13230.10763119681,
    "number_of_congested_satellites": {
-    "low": 40,
+    "low": 96,
+    "medium": 0,
+    "high": 0
+   },
+   "number_of_delayed_satellites": {
+    "low": 0,
+    "medium": 40,
+    "high": 56
+   }
+  },
+  "dqn": {
+   "path": [
+    1,
+    0,
+    44,
+    27,
+    44,
+    27,
+    44,
+    27,
+    49,
+    1,
+    26,
+    27,
+    44,
+    27,
+    44,
+    9
+   ],
+   "distance": 122664.98941527308,
+   "num_satellites": 16,
+   "true_distance": 13230.10763119681,
+   "number_of_congested_satellites": {
+    "low": 30,
+    "medium": 0,
+    "high": 0
+   },
+   "number_of_delayed_satellites": {
+    "low": 0,
+    "medium": 4,
+    "high": 26
+   }
+  }
+ },
+ {
+  "qlearing": {
+   "path": [
+    7,
+    0,
+    22,
+    0,
+    10,
+    24,
+    42,
+    0,
+    10,
+    29,
+    16,
+    43,
+    16,
+    19,
+    28,
+    36
+   ],
+   "distance": 72641.22127246068,
+   "num_satellites": 16,
+   "true_distance": 3358.412858269221,
+   "number_of_congested_satellites": {
+    "low": 30,
     "medium": 0,
     "high": 0
    },
    "number_of_delayed_satellites": {
     "low": 0,
     "medium": 14,
-    "high": 26
-   }
-  },
-  "dqn": {
-   "path": [
-    11,
-    31,
-    34
-   ],
-   "distance": 15142.231353891846,
-   "num_satellites": 3,
-   "true_distance": 8631.471780966449,
-   "number_of_congested_satellites": {
-    "low": 4,
-    "medium": 0,
-    "high": 0
-   },
-   "number_of_delayed_satellites": {
-    "low": 0,
-    "medium": 0,
-    "high": 4
-   }
-  }
- },
- {
-  "qlearing": {
-   "path": [
-    1,
-    37
-   ],
-   "distance": 6131.0440661214825,
-   "num_satellites": 2,
-   "true_distance": 6131.0440661214825,
-   "number_of_congested_satellites": {
-    "low": 2,
-    "medium": 0,
-    "high": 0
-   },
-   "number_of_delayed_satellites": {
-    "low": 0,
-    "medium": 0,
-    "high": 2
+    "high": 16
    }
   },
   "flood": {
    "path": [
     [
-     1,
-     2
+     7,
+     0
     ],
     [
-     1,
-     3
+     7,
+     1
     ],
     [
-     1,
-     4
-    ],
-    [
-     1,
+     7,
      6
     ],
     [
-     1,
-     7
-    ],
-    [
-     1,
+     7,
      8
     ],
     [
-     1,
-     9
+     7,
+     10
     ],
     [
-     1,
+     7,
      13
     ],
     [
-     1,
+     7,
      17
     ],
     [
-     1,
-     19
+     7,
+     22
     ],
     [
-     1,
-     20
-    ],
-    [
-     1,
-     21
-    ],
-    [
-     1,
+     7,
      24
     ],
     [
-     1,
-     25
-    ],
-    [
-     1,
-     27
-    ],
-    [
-     1,
+     7,
      28
     ],
     [
-     1,
-     29
+     7,
+     32
     ],
     [
-     1,
-     33
+     7,
+     34
     ],
     [
-     1,
-     37
+     7,
+     35
+    ],
+    [
+     7,
+     36
     ]
    ],
-   "distance": 74840.14776389115,
-   "num_satellites": 19,
-   "true_distance": 6131.0440661214825,
+   "distance": 65070.27124182395,
+   "num_satellites": 14,
+   "true_distance": 3358.412858269221,
    "number_of_congested_satellites": {
-    "low": 38,
+    "low": 28,
     "medium": 0,
     "high": 0
    },
    "number_of_delayed_satellites": {
     "low": 0,
-    "medium": 24,
-    "high": 14
+    "medium": 16,
+    "high": 12
    }
   },
   "dqn": {
    "path": [
-    1,
-    37
+    7,
+    36
    ],
-   "distance": 6131.0440661214825,
+   "distance": 3358.412858269221,
    "num_satellites": 2,
-   "true_distance": 6131.0440661214825,
+   "true_distance": 3358.412858269221,
    "number_of_congested_satellites": {
     "low": 2,
     "medium": 0,
@@ -485,8 +451,8 @@
    },
    "number_of_delayed_satellites": {
     "low": 0,
-    "medium": 0,
-    "high": 2
+    "medium": 2,
+    "high": 0
    }
   }
  }
